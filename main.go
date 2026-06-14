@@ -3,24 +3,19 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/giovaniif/sharding-test/db"
 	"github.com/giovaniif/sharding-test/handlers"
 )
 
 func main() {
-	sm, err := db.ConnectShards([db.NumShards]string{
-		os.Getenv("DB_HOST_0"),
-		os.Getenv("DB_HOST_1"),
-		os.Getenv("DB_HOST_2"),
-	})
+	database, err := db.Connect()
 	if err != nil {
-		log.Fatalf("failed to connect to shards: %v", err)
+		log.Fatalf("database connection failed: %v", err)
 	}
-	defer sm.Close()
+	defer database.Close()
 
-	orders := handlers.NewOrderHandler(sm)
+	orders := handlers.NewOrderHandler(database)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /orders", orders.GetAll)

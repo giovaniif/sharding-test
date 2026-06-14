@@ -4,65 +4,39 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"sort"
 	"strconv"
 
-	"github.com/giovaniif/sharding-test/db"
 	"github.com/giovaniif/sharding-test/models"
 )
 
 type OrderHandler struct {
-	sm *db.ShardManager
+	db *sql.DB
 }
 
-func NewOrderHandler(sm *db.ShardManager) *OrderHandler {
-	return &OrderHandler{sm: sm}
+func NewOrderHandler(db *sql.DB) *OrderHandler {
+	return &OrderHandler{db: db}
 }
 
 func (h *OrderHandler) GetAll(w http.ResponseWriter, r *http.Request) {
-	type shardResult struct {
-		orders []models.Order
-		err    error
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT id, product, quantity, price, created_at FROM orders ORDER BY id`)
+	if err != nil {
+		http.Error(w, "failed to fetch orders", http.StatusInternalServerError)
+		return
 	}
+	defer rows.Close()
 
-	shards := h.sm.All()
-	ch := make(chan shardResult, len(shards))
-
-	for _, shard := range shards {
-		go func(conn *sql.DB) {
-			rows, err := conn.QueryContext(r.Context(),
-				`SELECT id, product, quantity, price, created_at FROM orders ORDER BY id`)
-			if err != nil {
-				ch <- shardResult{err: err}
-				return
-			}
-			defer rows.Close()
-
-			var orders []models.Order
-			for rows.Next() {
-				var o models.Order
-				if err := rows.Scan(&o.ID, &o.Product, &o.Quantity, &o.Price, &o.CreatedAt); err != nil {
-					ch <- shardResult{err: err}
-					return
-				}
-				orders = append(orders, o)
-			}
-			ch <- shardResult{orders: orders}
-		}(shard)
-	}
-
-	all := []models.Order{}
-	for range shards {
-		res := <-ch
-		if res.err != nil {
-			http.Error(w, "failed to fetch orders", http.StatusInternalServerError)
+	orders := []models.Order{}
+	for rows.Next() {
+		var o models.Order
+		if err := rows.Scan(&o.ID, &o.Product, &o.Quantity, &o.Price, &o.CreatedAt); err != nil {
+			http.Error(w, "failed to scan order", http.StatusInternalServerError)
 			return
 		}
-		all = append(all, res.orders...)
+		orders = append(orders, o)
 	}
 
-	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
-	writeJSON(w, http.StatusOK, all)
+	writeJSON(w, http.StatusOK, orders)
 }
 
 func (h *OrderHandler) GetByID(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +47,7 @@ func (h *OrderHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var o models.Order
-	err = h.sm.ShardFor(id).QueryRowContext(r.Context(),
+	err = h.db.QueryRowContext(r.Context(),
 		`SELECT id, product, quantity, price, created_at FROM orders WHERE id = $1`, id).
 		Scan(&o.ID, &o.Product, &o.Quantity, &o.Price, &o.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -99,9 +73,8 @@ func (h *OrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, shard := h.sm.NextShard()
 	var o models.Order
-	err := shard.QueryRowContext(r.Context(),
+	err := h.db.QueryRowContext(r.Context(),
 		`INSERT INTO orders (product, quantity, price) VALUES ($1, $2, $3)
 		 RETURNING id, product, quantity, price, created_at`,
 		req.Product, req.Quantity, req.Price).
@@ -121,7 +94,7 @@ func (h *OrderHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.sm.ShardFor(id).ExecContext(r.Context(),
+	result, err := h.db.ExecContext(r.Context(),
 		`DELETE FROM orders WHERE id = $1`, id)
 	if err != nil {
 		http.Error(w, "failed to delete order", http.StatusInternalServerError)
