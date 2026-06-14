@@ -1,0 +1,5 @@
+linters-settings:
+  revive:
+    rules:
+      - name: package-comments
+        disabled: true

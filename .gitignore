@@ -1,0 +1,12 @@
+# binary
+sharding-test
+api
+
+# environment
+.env
+.env.*
+
+# editor
+.idea/
+.vscode/
+*.swp

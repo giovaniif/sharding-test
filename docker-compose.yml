@@ -1,0 +1,72 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3001:8080"
+    environment:
+      DB_HOST_0: postgres0
+      DB_HOST_1: postgres1
+      DB_HOST_2: postgres2
+    depends_on:
+      postgres0:
+        condition: service_healthy
+      postgres1:
+        condition: service_healthy
+      postgres2:
+        condition: service_healthy
+
+  postgres0:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    volumes:
+      - postgres0_data:/var/lib/postgresql/data
+      - ./init-shard-0.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres1:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    volumes:
+      - postgres1_data:/var/lib/postgresql/data
+      - ./init-shard-1.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres2:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    volumes:
+      - postgres2_data:/var/lib/postgresql/data
+      - ./init-shard-2.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres0_data:
+  postgres1_data:
+  postgres2_data:
